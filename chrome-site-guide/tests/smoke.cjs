@@ -20,7 +20,7 @@ const assert = require('node:assert/strict');
   console.log('PASS: analyzer detects UI; excludes sensitive fields, values, hidden elements, URL query/fragment and unsafe links.');
   const panel = await browser.newPage({acceptDownloads:true});
   await panel.addInitScript(({result}) => {
-   window.chrome = {storage:{local:{get:async()=>({siteGuidePages:[]}),set:async data=>{window.saved=data},remove:async()=>{window.saved=null}}},tabs:{query:async()=>[{id:1}]},scripting:{executeScript:async()=>[{result}]}};
+   window.chrome = {storage:{local:{get:async()=>({siteGuidePages:[]}),set:async data=>{window.saved=data},remove:async()=>{window.saved=null}}},tabs:{query:async()=>[{id:1,url:'https://fixture.test/orders?secret=PRIVATE_QUERY'}]},scripting:{executeScript:async()=>[{result}]}};
   },{result});
   await panel.route('https://panel.test/**', route => {
    const name = new URL(route.request().url()).pathname.slice(1) || 'panel.html';
@@ -45,7 +45,29 @@ const assert = require('node:assert/strict');
   await panel.waitForFunction(()=>document.getElementById('count').textContent==='0');
   await panel.evaluate(()=>{chrome.scripting.executeScript=async()=>{throw new Error('denied')}});
   await panel.locator('#analyze').click();
-  await panel.waitForFunction(()=>document.getElementById('status').textContent.includes('تعذّر'));
-  console.log('PASS: panel analysis, local save, deduplication, JSON export, clear and permission-error handling.');
+  await panel.waitForFunction(()=>document.getElementById('status').textContent.includes('لم يمنح'));
+  await panel.locator('#allow').waitFor({state:'visible'});
+  await panel.evaluate(() => {
+   chrome.permissions = {request: async options => {
+    window.requestedPermissions = options;
+    chrome.scripting.executeScript = async () => [{result:{url:'https://fixture.test/orders',title:'طلب',headings:[],fields:[],buttons:[],links:[],odoo:false}}];
+    return true;
+   }};
+  });
+  await panel.locator('#allow').click();
+  await panel.waitForFunction(()=>document.getElementById('count').textContent==='1');
+  assert.deepEqual(await panel.evaluate(()=>window.requestedPermissions),{origins:['https://fixture.test/*']});
+  await panel.evaluate(()=>{chrome.tabs.query=async()=>[{id:1,url:'chrome://extensions'}]});
+  await panel.locator('#analyze').click();
+  await panel.waitForFunction(()=>document.getElementById('status').textContent.includes('غير مدعومة'));
+  assert.equal(await panel.locator('#allow').isVisible(),false);
+  await panel.evaluate(()=>{
+   chrome.tabs.query=async()=>[{id:1,url:'https://fixture.test/orders'}];
+   chrome.scripting.executeScript=async()=>{throw new Error('Unexpected failure at https://fixture.test/orders?secret=PRIVATE_ERROR#hidden')};
+  });
+  await panel.locator('#analyze').click();
+  await panel.waitForFunction(()=>document.getElementById('status').textContent.includes('Unexpected failure'));
+  assert.ok(!(await panel.locator('#status').innerText()).includes('PRIVATE_ERROR'));
+  console.log('PASS: panel save, deduplication, export, clear; denied injection recovery requests only current origin; restricted pages and sanitized unexpected errors.');
  } finally { await browser.close(); }
 })().catch(e=>{console.error(e);process.exitCode=1});

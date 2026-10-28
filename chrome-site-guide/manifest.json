@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "افهم الموقع — Site Guide",
+  "version": "1.0.0",
+  "description": "تحليل محلي للصفحة وخريطة للموقع، بدون قراءة قيم الحقول.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "sidePanel"
+  ],
+  "action": {
+    "default_title": "افهم الموقع"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "minimum_chrome_version": "116"
+}
